@@ -53,7 +53,7 @@ class TemplateGridEngine:
     
     def __init__(self):
         self.validated_patterns: List[TemplateGridPattern] = []
-        self.min_similarity = 60.0
+        self.min_similarity = 60.0  # As per your specifications: similarity > 60%
         
     def load_patterns_from_db(self, db_patterns: List[Dict]) -> None:
         """Load patterns from database query results"""
@@ -172,39 +172,236 @@ class TemplateGridEngine:
         # Convert to percentage (0-100)
         return max(0.0, similarity * 100.0)
     
-    def make_trading_decision(self, predicate_accuracies: List[float]) -> str:
-        """Make trading decision based on 10 predicate accuracies"""
+    def calculate_trend_behavior(self, predicate_accuracies: List[float], ho: float = 10.0) -> float:
+        """
+        Calculate Trend Behavior (TB) using the specified formula:
+        TB = (r2 + r4 + r6 + r8 + r10) - (r1 + r3 + r5 + r7 + r9)
+        
+        Args:
+            predicate_accuracies: List of 10 predicate accuracy percentages
+            ho: Threshold for trend classification (default: 10.0)
+        
+        Returns:
+            TB value for trend classification
+        """
+        if len(predicate_accuracies) != 10:
+            return 0.0
+        
+        # Extract odd and even predicate accuracies (0-indexed, so adjust)
+        r1, r2, r3, r4, r5, r6, r7, r8, r9, r10 = predicate_accuracies
+        
+        # TB = (r2 + r4 + r6 + r8 + r10) - (r1 + r3 + r5 + r7 + r9)
+        # Even indices (1,3,5,7,9 in 0-indexed) are "highest price greater than" predictors
+        # Odd indices (0,2,4,6,8 in 0-indexed) are "lowest price less than" predictors
+        bullish_sum = r2 + r4 + r6 + r8 + r10  # Even predicates (highest price predictions)
+        bearish_sum = r1 + r3 + r5 + r7 + r9   # Odd predicates (lowest price predictions)
+        
+        tb = bullish_sum - bearish_sum
+        return tb
+    
+    def classify_trend_behavior(self, tb: float, ho: float = 10.0) -> str:
+        """
+        Classify Trend Behavior:
+        - Bullish: TB > ho
+        - Bearish: TB < -ho  
+        - NoTrend: TB ∈ [-ho, ho]
+        """
+        if tb > ho:
+            return 'Bullish'
+        elif tb < -ho:
+            return 'Bearish'
+        else:
+            return 'NoTrend'
+    
+    def make_trading_decision(self, predicate_accuracies: List[float], ho: float = 10.0) -> str:
+        """
+        Make trading decision based on your exact specifications:
+        
+        ENTER LONG: If max(r1...r10) = max(r2,r4,r6,r8,r10) and TB is Bullish
+        ENTER SHORT: If max(r1...r10) = max(r1,r3,r5,r7,r9) and TB is Bearish  
+        NOT TRADE: If TB is NoTrend
+        CONFLICT: Mixed signals
+        """
         
         if len(predicate_accuracies) != 10:
             return 'NOT_TRADE'
         
-        # Count strong signals
-        long_signals = sum(1 for acc in predicate_accuracies[:5] if acc > 70.0)
-        short_signals = sum(1 for acc in predicate_accuracies[5:] if acc > 70.0)
+        r1, r2, r3, r4, r5, r6, r7, r8, r9, r10 = predicate_accuracies
         
-        # Decision logic
-        if long_signals >= 3 and short_signals <= 1:
-            return 'ENTER_LONG'
-        elif short_signals >= 3 and long_signals <= 1:
-            return 'ENTER_SHORT'
-        elif long_signals >= 2 and short_signals >= 2:
-            return 'CONFLICT'
-        else:
+        # Calculate Trend Behavior
+        tb = self.calculate_trend_behavior(predicate_accuracies, ho)
+        trend_class = self.classify_trend_behavior(tb, ho)
+        
+        # Find maximum predictor accuracies
+        all_max = max(predicate_accuracies)
+        bullish_max = max([r2, r4, r6, r8, r10])  # Even predicates (highest price > threshold)
+        bearish_max = max([r1, r3, r5, r7, r9])   # Odd predicates (lowest price < threshold)
+        
+        # Trading Decision Rules
+        if trend_class == 'NoTrend':
             return 'NOT_TRADE'
+        elif all_max == bullish_max and trend_class == 'Bullish':
+            return 'ENTER_LONG'
+        elif all_max == bearish_max and trend_class == 'Bearish':
+            return 'ENTER_SHORT'
+        else:
+            # Mixed or conflicting signals
+            return 'CONFLICT'
     
-    def calculate_trend_behavior(self, price_window: List[float]) -> float:
-        """Calculate trend behavior metric"""
+    def calculate_pips_range(self, price_window: List[float], timeframe: str) -> float:
+        """
+        Calculate pips range for current chart formation
+        Used for Pips Range Filter
+        """
         if len(price_window) < 2:
             return 0.0
         
-        # Simple trend calculation
-        start_price = price_window[0]
-        end_price = price_window[-1]
+        high = max(price_window)
+        low = min(price_window)
         
-        if start_price == 0:
-            return 0.0
+        # Convert to pips based on timeframe and instrument
+        # For forex: 1 pip = 0.0001 for most pairs
+        pip_size = 0.0001
+        pips_range = (high - low) / pip_size
         
-        return ((end_price - start_price) / start_price) * 100.0
+        return pips_range
+    
+    def get_minimum_pips_range(self, timeframe: str) -> float:
+        """
+        Get minimum pips range based on timeframe
+        Ensures meaningful price movements
+        """
+        min_pips_map = {
+            '1m': 5.0,    # 5 pips minimum for 1-minute
+            '5m': 8.0,    # 8 pips minimum for 5-minute
+            '15m': 12.0,  # 12 pips minimum for 15-minute
+            '20m': 15.0,  # 15 pips minimum for 20-minute
+            '1h': 20.0,   # 20 pips minimum for 1-hour
+            '60m': 20.0,  # Same as 1h
+            '4h': 40.0,   # 40 pips minimum for 4-hour
+            'D': 80.0,    # 80 pips minimum for daily
+        }
+        
+        return min_pips_map.get(timeframe, 10.0)
+    
+    def check_price_level_bands(
+        self, 
+        current_price: float, 
+        average_price_level: float, 
+        threshold_band: float = 0.02
+    ) -> bool:
+        """
+        Price-Level Bands Filter
+        Check if current Price Level (PL) is within APL ± ThresholdBand
+        
+        Args:
+            current_price: Current price level
+            average_price_level: Average price level from historical data
+            threshold_band: Threshold band as percentage (default: 2%)
+        
+        Returns:
+            True if within bands, False otherwise
+        """
+        if average_price_level == 0:
+            return True  # Skip filter if no historical data
+        
+        band_width = average_price_level * threshold_band
+        upper_band = average_price_level + band_width
+        lower_band = average_price_level - band_width
+        
+        return lower_band <= current_price <= upper_band
+    
+    def validate_forecasting_power(self, predicate_accuracies: List[float]) -> bool:
+        """
+        Validate that pattern has Forecasting Power
+        FP = TRUE if at least one predicate has result rk = TRUE
+        
+        Assuming TRUE means accuracy > 50% (better than random)
+        """
+        if len(predicate_accuracies) != 10:
+            return False
+        
+        return any(accuracy > 50.0 for accuracy in predicate_accuracies)
+    
+    def calculate_predicate_values(
+        self, 
+        price_window: List[float], 
+        periods: List[int] = [1, 5, 10, 20, 50]
+    ) -> List[float]:
+        """
+        Calculate the 10 predicate values for current price window
+        Based on your specifications:
+        - r1, r3, r5, r7, r9: "lowest price in next k periods < current price"
+        - r2, r4, r6, r8, r10: "highest price in next k periods > current price"
+        
+        Args:
+            price_window: Historical price data
+            periods: The k periods [1, 5, 10, 20, 50]
+        
+        Returns:
+            List of 10 predicate accuracy percentages (simulated for real-time)
+        """
+        if len(price_window) < max(periods):
+            # Not enough data, return neutral values
+            return [50.0] * 10
+        
+        current_price = price_window[-1]
+        predicate_values = []
+        
+        # Calculate predicates for each period
+        for k in periods:
+            if len(price_window) < k + 1:
+                # Not enough future data, estimate based on volatility
+                volatility = np.std(price_window[-min(20, len(price_window)):])
+                
+                # Estimate probabilities based on current market volatility
+                prob_lowest = 45.0 + (volatility * 1000)  # Scale volatility to percentage
+                prob_highest = 55.0 + (volatility * 1000)
+                
+                prob_lowest = min(95.0, max(5.0, prob_lowest))
+                prob_highest = min(95.0, max(5.0, prob_highest))
+            else:
+                # Look at historical patterns for estimation
+                future_window = price_window[-k:]
+                min_future = min(future_window)
+                max_future = max(future_window)
+                
+                # Convert to probability estimates (simplified approach)
+                prob_lowest = 60.0 if min_future < current_price else 40.0
+                prob_highest = 60.0 if max_future > current_price else 40.0
+            
+            # Add both predicates for this period
+            predicate_values.extend([prob_lowest, prob_highest])
+        
+        return predicate_values
+    
+    def get_pattern_statistics(self, pattern_id: int) -> Dict:
+        """Get detailed statistics for a specific pattern"""
+        for pattern in self.validated_patterns:
+            if pattern.id == pattern_id:
+                success_rate = 0.0
+                if pattern.trades_taken > 0:
+                    success_rate = pattern.successful_trades / pattern.trades_taken
+                
+                return {
+                    'pattern_id': pattern.id,
+                    'pic': pattern.pic,
+                    'grid_size': pattern.grid_size,
+                    'timeframe': pattern.timeframe,
+                    'creation_method': pattern.creation_method,
+                    'prediction_accuracy': pattern.prediction_accuracy,
+                    'has_forecasting_power': pattern.has_forecasting_power,
+                    'trades_taken': pattern.trades_taken,
+                    'successful_trades': pattern.successful_trades,
+                    'success_rate': success_rate * 100.0,
+                    'total_pnl': pattern.total_pnl,
+                    'avg_pnl_per_trade': pattern.total_pnl / max(1, pattern.trades_taken),
+                    'predicate_accuracies': pattern.predicate_accuracies,
+                    'trend_behavior': self.calculate_trend_behavior(pattern.predicate_accuracies),
+                    'trading_decision': self.make_trading_decision(pattern.predicate_accuracies)
+                }
+        
+        return {}
     
     def detect_patterns_in_window(
         self,
@@ -242,41 +439,63 @@ class TemplateGridEngine:
                     current_pic
                 )
                 
-                # Check similarity threshold
-                if similarity >= self.min_similarity:
-                    # Generate trading decision
-                    prediction = self.make_trading_decision(pattern.predicate_accuracies)
-                    
-                    # Calculate confidence
-                    confidence = (similarity + pattern.prediction_accuracy) / 2.0
-                    
-                    # Calculate trend behavior
-                    trend_behavior = self.calculate_trend_behavior(pattern_window)
-                    
-                    # Create match
-                    match = PatternMatch(
-                        pattern_id=pattern.id,
-                        similarity=similarity,
-                        confidence=confidence,
-                        prediction=prediction,
-                        trend_behavior=trend_behavior,
-                        predicate_accuracies=pattern.predicate_accuracies,
-                        detected_at=datetime.utcnow(),
-                        current_price=current_price,
-                        symbol=symbol,
-                        timeframe=timeframe,
-                        grid_size=pattern.grid_size,
-                        pattern_data={
-                            'creation_method': pattern.creation_method,
-                            'trades_taken': pattern.trades_taken,
-                            'successful_trades': pattern.successful_trades,
-                            'total_pnl': pattern.total_pnl,
-                            'pic': current_pic,
-                            'pattern_pic': pattern.pic
-                        }
-                    )
-                    
-                    matches.append(match)
+                # Apply Strategy Algorithm as per your specifications
+                
+                # Step 1: Check similarity > 60%
+                if similarity < 60.0:
+                    continue
+                
+                # Step 2: Validate forecasting power
+                if not self.validate_forecasting_power(pattern.predicate_accuracies):
+                    continue
+                
+                # Step 3: Apply Pips Range Filter
+                current_pips_range = self.calculate_pips_range(pattern_window, timeframe)
+                min_pips_range = self.get_minimum_pips_range(timeframe)
+                
+                if current_pips_range < min_pips_range:
+                    continue
+                
+                # Step 4: Apply Price-Level Bands Filter
+                # Calculate average price level from pattern window
+                average_price_level = sum(pattern_window) / len(pattern_window)
+                
+                if not self.check_price_level_bands(current_price, average_price_level):
+                    continue
+                
+                # Step 5: Generate trading decision using proper algorithm
+                prediction = self.make_trading_decision(pattern.predicate_accuracies)
+                
+                # Step 6: Calculate confidence (similarity + prediction accuracy)
+                confidence = (similarity + pattern.prediction_accuracy) / 2.0
+                
+                # Step 7: Calculate Trend Behavior using predicate accuracies
+                trend_behavior = self.calculate_trend_behavior(pattern.predicate_accuracies)
+                
+                # Create match
+                match = PatternMatch(
+                    pattern_id=pattern.id,
+                    similarity=similarity,
+                    confidence=confidence,
+                    prediction=prediction,
+                    trend_behavior=trend_behavior,
+                    predicate_accuracies=pattern.predicate_accuracies,
+                    detected_at=datetime.utcnow(),
+                    current_price=current_price,
+                    symbol=symbol,
+                    timeframe=timeframe,
+                    grid_size=pattern.grid_size,
+                    pattern_data={
+                        'creation_method': pattern.creation_method,
+                        'trades_taken': pattern.trades_taken,
+                        'successful_trades': pattern.successful_trades,
+                        'total_pnl': pattern.total_pnl,
+                        'pic': current_pic,
+                        'pattern_pic': pattern.pic
+                    }
+                )
+                
+                matches.append(match)
                     
             except Exception as e:
                 logger.error(f"Error detecting pattern {pattern.id}: {e}")
