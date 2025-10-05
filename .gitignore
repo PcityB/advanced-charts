@@ -59,3 +59,8 @@ docker-compose.override.yml
 
 # React
 .eslintcache
+package-lock.json
+advanced-charts/package-lock.json
+advanced-charts/package.json
+advanced-charts/package.json
+advanced-charts/package.json
