@@ -33,17 +33,18 @@ class TimeframeAggregator:
     }
     
     def __init__(self):
-        self.conn: Optional[asyncpg.Connection] = None
+        self.conn: asyncpg.Connection = None  # type: ignore
     
     async def connect(self):
         """Establish database connection"""
-        self.conn = await asyncpg.connect(
-            host=settings.DATABASE_HOST,
-            port=settings.DATABASE_PORT,
-            user=settings.DATABASE_USER,
-            password=settings.DATABASE_PASSWORD,
-            database=settings.DATABASE_NAME
-        )
+        if not self.conn:
+            self.conn = await asyncpg.connect(
+                host=settings.DATABASE_HOST,
+                port=settings.DATABASE_PORT,
+                user=settings.DATABASE_USER,
+                password=settings.DATABASE_PASSWORD,
+                database=settings.DATABASE_NAME
+            )
     
     async def close(self):
         """Close database connection"""
@@ -75,8 +76,8 @@ class TimeframeAggregator:
         
         # Build time filter
         time_filter = ""
-        params = [symbol, timeframe, bucket_interval]
-        param_idx = 4
+        params: list = [symbol, timeframe]
+        param_idx = 3
         
         if start_time:
             time_filter += f" AND time >= ${param_idx}"
@@ -90,7 +91,7 @@ class TimeframeAggregator:
         query = f"""
         INSERT INTO ohlcv_data (time, symbol, timeframe, open, high, low, close, volume, tick_count)
         SELECT
-            time_bucket($3, time) as bucket_time,
+            time_bucket('{bucket_interval}', time) as bucket_time,
             $1 as symbol,
             $2 as timeframe,
             FIRST(bid, time) as open,
@@ -113,8 +114,9 @@ class TimeframeAggregator:
             tick_count = EXCLUDED.tick_count;
         """
         
-        await self.conn.execute(query, *params)
-        logger.info(f"Aggregation completed for {symbol} - {timeframe}")
+        if self.conn:
+            await self.conn.execute(query, *params)
+            logger.info(f"Aggregation completed for {symbol} - {timeframe}")
     
     async def aggregate_from_lower_timeframe(
         self,
@@ -137,8 +139,8 @@ class TimeframeAggregator:
         logger.info(f"Aggregating {symbol} from {source_timeframe} to {target_timeframe}")
         
         time_filter = ""
-        params = [symbol, source_timeframe, target_timeframe, bucket_interval]
-        param_idx = 5
+        params: list = [symbol, source_timeframe, target_timeframe]
+        param_idx = 4
         
         if start_time:
             time_filter += f" AND time >= ${param_idx}"
@@ -152,7 +154,7 @@ class TimeframeAggregator:
         query = f"""
         INSERT INTO ohlcv_data (time, symbol, timeframe, open, high, low, close, volume, tick_count)
         SELECT
-            time_bucket($4, time) as bucket_time,
+            time_bucket('{bucket_interval}', time) as bucket_time,
             $1 as symbol,
             $3 as target_timeframe,
             FIRST(open, time) as open,
@@ -175,8 +177,9 @@ class TimeframeAggregator:
             tick_count = EXCLUDED.tick_count;
         """
         
-        await self.conn.execute(query, *params)
-        logger.info(f"Aggregation completed for {symbol}: {source_timeframe} -> {target_timeframe}")
+        if self.conn:
+            await self.conn.execute(query, *params)
+            logger.info(f"Aggregation completed for {symbol}: {source_timeframe} -> {target_timeframe}")
     
     async def refresh_continuous_aggregate(self, view_name: str):
         """Manually refresh a continuous aggregate view"""
@@ -186,8 +189,9 @@ class TimeframeAggregator:
         CALL refresh_continuous_aggregate('{view_name}', NULL, NULL);
         """
         
-        await self.conn.execute(query)
-        logger.info(f"Refresh completed for {view_name}")
+        if self.conn:
+            await self.conn.execute(query)
+            logger.info(f"Refresh completed for {view_name}")
     
     async def aggregate_all_timeframes(
         self,
@@ -295,19 +299,22 @@ class TimeframeAggregator:
         if limit:
             query += f" LIMIT {limit}"
         
+        if not self.conn:
+            return []
+        
         rows = await self.conn.fetch(query, *params)
         
-        bars = []
+        bars: List[Dict] = []
         for row in rows:
             bars.append({
-                'time': row['time'],
-                'symbol': row['symbol'],
+                'time': row['time'].isoformat() if hasattr(row['time'], 'isoformat') else str(row['time']),
+                'symbol': str(row['symbol']),
                 'open': float(row['open']),
                 'high': float(row['high']),
                 'low': float(row['low']),
                 'close': float(row['close']),
                 'volume': float(row['volume']),
-                'tick_count': row['tick_count']
+                'tick_count': int(row['tick_count'])
             })
         
         return bars
@@ -337,18 +344,21 @@ class TimeframeAggregator:
             """
             params = [symbol, timeframe]
         
+        if not self.conn:
+            return None
+        
         row = await self.conn.fetchrow(query, *params)
         
         if row:
             return {
-                'time': row['time'],
-                'symbol': row['symbol'],
+                'time': row['time'].isoformat() if hasattr(row['time'], 'isoformat') else str(row['time']),
+                'symbol': str(row['symbol']),
                 'open': float(row['open']),
                 'high': float(row['high']),
                 'low': float(row['low']),
                 'close': float(row['close']),
                 'volume': float(row['volume']),
-                'tick_count': row['tick_count']
+                'tick_count': int(row['tick_count'])
             }
         
         return None
