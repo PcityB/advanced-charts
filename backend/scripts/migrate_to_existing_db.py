@@ -78,7 +78,7 @@ class DatabaseMigrator:
                     pattern_id INTEGER REFERENCES chart_patterns(id),
                     price DECIMAL(20, 10) NOT NULL,
                     confidence DECIMAL(5, 2) NOT NULL,
-                    metadata JSONB,
+                    signal_metadata JSONB,
                     created_at TIMESTAMPTZ DEFAULT NOW()
                 );
             """,

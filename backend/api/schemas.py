@@ -132,7 +132,7 @@ class TradingSignalResponse(BaseModel):
     pattern_id: Optional[int]
     price: float
     confidence: float
-    metadata: Optional[Dict[str, Any]] = None
+    signal_metadata: Optional[Dict[str, Any]] = None
     created_at: datetime
     
     class Config:

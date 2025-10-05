@@ -227,7 +227,7 @@ class LivePatternDetector:
         try:
             query = """
             INSERT INTO trading_signals 
-            (symbol, timeframe, signal_time, signal_type, price, confidence, metadata)
+            (symbol, timeframe, signal_time, signal_type, price, confidence, signal_metadata)
             VALUES ($1, $2, $3, $4, $5, $6, $7)
             """
             
