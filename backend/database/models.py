@@ -54,7 +54,7 @@ class TradingSignal(Base):
     pattern_id = Column(Integer, ForeignKey('chart_patterns.id'))
     price = Column(Numeric(20, 10), nullable=False)
     confidence = Column(Numeric(5, 2), nullable=False)
-    metadata = Column(JSONB)
+    signal_metadata = Column(JSONB)
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
 
 
