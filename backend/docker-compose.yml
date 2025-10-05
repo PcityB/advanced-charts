@@ -9,7 +9,7 @@ services:
       POSTGRES_USER: trading_user
       POSTGRES_PASSWORD: trading_pass
     ports:
-      - "5432:5432"
+      - "5433:5433"
     volumes:
       - timescaledb_data:/var/lib/postgresql/data
       - ./init_db.sql:/docker-entrypoint-initdb.d/init_db.sql
