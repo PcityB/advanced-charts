@@ -75,7 +75,7 @@ async def get_history(
     from_time: int = Query(..., alias="from"),
     to_time: int = Query(..., alias="to"),
     countback: Optional[int] = Query(None)
-) -> Dict[str, any]:
+) -> Dict[str, Any]:
     """
     Get historical bars for TradingView
     
