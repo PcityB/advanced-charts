@@ -40,7 +40,7 @@ async def create_replay_session(
             timeframe=session_data.timeframe,
             start_time=session_data.start_time,
             end_time=session_data.end_time,
-            current_time=session_data.start_time,
+            current_replay_time=session_data.start_time,
             speed=session_data.speed,
             is_active=True
         )
@@ -134,13 +134,13 @@ async def update_replay_session(
             raise HTTPException(status_code=404, detail="Replay session not found")
         
         # Update fields
-        if update_data.current_time is not None:
-            if not (session.start_time <= update_data.current_time <= session.end_time):
+        if update_data.current_replay_time is not None:
+            if not (session.start_time <= update_data.current_replay_time <= session.end_time):
                 raise HTTPException(
                     status_code=400,
                     detail="Current time must be within session time range"
                 )
-            session.current_time = update_data.current_time
+            session.current_replay_time = update_data.current_replay_time
         
         if update_data.speed is not None:
             session.speed = update_data.speed
@@ -201,9 +201,9 @@ async def get_replay_bars(
     db: AsyncSession = Depends(get_async_session)
 ):
     """
-    Get bars for replay session up to current_time
+    Get bars for replay session up to current_replay_time
     
-    This endpoint returns bars from start_time to current_time,
+    This endpoint returns bars from start_time to current_replay_time,
     simulating a bar replay scenario
     
     Args:
@@ -228,7 +228,7 @@ async def get_replay_bars(
                 symbol=session.symbol,
                 timeframe=session.timeframe,
                 start_time=session.start_time,
-                end_time=session.current_time,
+                end_time=session.current_replay_time,
                 limit=limit
             )
             
@@ -294,14 +294,14 @@ async def advance_replay(
         delta = timeframe_deltas.get(session.timeframe, timedelta(minutes=1))
         
         # Advance time
-        new_time = session.current_time + (delta * bars)
+        new_time = session.current_replay_time + (delta * bars)
         
         # Don't go past end time
         if new_time > session.end_time:
             new_time = session.end_time
             session.is_active = False  # Auto-pause at end
         
-        session.current_time = new_time
+        session.current_replay_time = new_time
         session.updated_at = datetime.utcnow()
         
         await db.commit()
@@ -309,7 +309,7 @@ async def advance_replay(
         
         return {
             "message": f"Advanced {bars} bar(s)",
-            "current_time": session.current_time,
+            "current_time": session.current_replay_time,
             "is_active": session.is_active
         }
         
@@ -335,7 +335,7 @@ async def reset_replay(
         if not session:
             raise HTTPException(status_code=404, detail="Replay session not found")
         
-        session.current_time = session.start_time
+        session.current_replay_time = session.start_time
         session.is_active = True
         session.updated_at = datetime.utcnow()
         

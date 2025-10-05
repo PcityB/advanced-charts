@@ -73,7 +73,7 @@ class ReplaySessionCreate(BaseModel):
 
 class ReplaySessionUpdate(BaseModel):
     """Update replay session"""
-    current_time: Optional[datetime] = None
+    current_replay_time: Optional[datetime] = None
     speed: Optional[float] = Field(default=None, ge=0.1, le=10.0)
     is_active: Optional[bool] = None
 
@@ -86,7 +86,7 @@ class ReplaySessionResponse(BaseModel):
     timeframe: str
     start_time: datetime
     end_time: datetime
-    current_time: datetime
+    current_replay_time: datetime
     speed: float
     is_active: bool
     created_at: datetime

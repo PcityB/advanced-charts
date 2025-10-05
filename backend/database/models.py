@@ -67,7 +67,7 @@ class ReplaySession(Base):
     timeframe = Column(String(10), nullable=False)
     start_time = Column(DateTime(timezone=True), nullable=False)
     end_time = Column(DateTime(timezone=True), nullable=False)
-    current_time = Column(DateTime(timezone=True), nullable=False)
+    current_replay_time = Column(DateTime(timezone=True), nullable=False)
     speed = Column(Numeric(5, 2), default=1.0)
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)

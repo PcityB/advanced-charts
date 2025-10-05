@@ -78,7 +78,7 @@ CREATE TABLE IF NOT EXISTS replay_sessions (
     timeframe VARCHAR(10) NOT NULL,
     start_time TIMESTAMPTZ NOT NULL,
     end_time TIMESTAMPTZ NOT NULL,
-    current_time TIMESTAMPTZ NOT NULL,
+    current_replay_time TIMESTAMPTZ NOT NULL,
     speed DECIMAL(5, 2) DEFAULT 1.0,
     is_active BOOLEAN DEFAULT TRUE,
     created_at TIMESTAMPTZ DEFAULT NOW(),
