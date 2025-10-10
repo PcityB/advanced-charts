@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException, Query
 from typing import List, Optional, Dict, Any
 from datetime import datetime, timedelta
+from dateutil.parser import parse
 import asyncpg
 from config.settings import settings
 from api.schemas import OHLCVBar, SymbolInfo, Configuration
@@ -121,7 +122,7 @@ async def get_history(
             # Format for TradingView
             response = {
                 "s": "ok",
-                "t": [int(bar['time'].timestamp()) for bar in bars],
+                "t": [int(parse(bar['time']).timestamp()) if isinstance(bar['time'], str) else int(bar['time'].timestamp()) for bar in bars],
                 "o": [bar['open'] for bar in bars],
                 "h": [bar['high'] for bar in bars],
                 "l": [bar['low'] for bar in bars],
