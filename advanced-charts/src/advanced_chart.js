@@ -1,14 +1,14 @@
 import React, { useEffect, useRef } from "react";
 
 import { widget } from "./charting_library";
-import Datafeed from "./datafeed_custom";
+import Datafeed from "./datafeed_backend";
 
-const TVChartContainer = () => {
+const TVChartContainer = ({ currentSession }) => {
   const chartContainerRef = useRef();
 
   useEffect(() => {
     const widgetOptions = {
-      symbol: "USDT",
+      symbol: "XAUUSD",
       datafeed: Datafeed,
       container: chartContainerRef.current,
       library_path: "/charting_library/",
@@ -29,8 +29,8 @@ const TVChartContainer = () => {
       fullscreen: false,
       autosize: true,
       studies_overrides: {},
-      supports_marks: false,
-      supports_timescale_marks: false,
+      supports_marks: true,
+      supports_timescale_marks: true,
       theme: "dark",
 
       overrides: {
@@ -42,9 +42,11 @@ const TVChartContainer = () => {
     const tvWidget = new widget(widgetOptions); 
    
     return () => {
-      tvWidget.remove();
+      if (tvWidget) {
+        tvWidget.remove();
+      }
     };
-  }, []);
+  }, [currentSession]);
 
   return <div ref={chartContainerRef} style={{ height: '700px', backgroundColor: 'black' }}/>;
 };
