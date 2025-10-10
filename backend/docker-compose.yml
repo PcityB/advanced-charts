@@ -2,16 +2,16 @@ version: '3.8'
 
 services:
   timescaledb:
-    image: timescale/timescaledb:latest-pg15
+    image: timescale/timescaledb:latest-pg17
     container_name: trading_timescaledb
     environment:
       POSTGRES_DB: trading_simulator
       POSTGRES_USER: trading_user
       POSTGRES_PASSWORD: trading_pass
     ports:
-      - "5433:5433"
+      - "5433:5432"
     volumes:
-      - timescaledb_data:/var/lib/postgresql/data
+      - ~/trading_simulator_data:/var/lib/postgresql/data
       - ./init_db.sql:/docker-entrypoint-initdb.d/init_db.sql
     command: postgres -c shared_preload_libraries=timescaledb
     

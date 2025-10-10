@@ -24,14 +24,6 @@ class TimeframeAggregator:
         'M': '1 month'
     }
     
-    TIMEFRAME_MATERIALIZED_VIEWS = {
-        '1': 'ohlcv_1m',
-        '5': 'ohlcv_5m',
-        '15': 'ohlcv_15m',
-        '60': 'ohlcv_1h',
-        'D': 'ohlcv_1d'
-    }
-    
     def __init__(self):
         self.conn: asyncpg.Connection = None  # type: ignore
     
@@ -70,7 +62,7 @@ class TimeframeAggregator:
         if timeframe not in self.TIMEFRAME_MAP:
             raise ValueError(f"Unsupported timeframe: {timeframe}")
         
-        bucket_interval = self.TIMEFRAME_MAP[timeframe]
+        bucket_interval = self.TIMEFRAME_MAP.get(timeframe)
         
         logger.info(f"Aggregating {symbol} to {timeframe} timeframe")
         
@@ -134,7 +126,7 @@ class TimeframeAggregator:
         if target_timeframe not in self.TIMEFRAME_MAP:
             raise ValueError(f"Unsupported target timeframe: {target_timeframe}")
         
-        bucket_interval = self.TIMEFRAME_MAP[target_timeframe]
+        bucket_interval = self.TIMEFRAME_MAP.get(target_timeframe)
         
         logger.info(f"Aggregating {symbol} from {source_timeframe} to {target_timeframe}")
         
@@ -155,7 +147,7 @@ class TimeframeAggregator:
         INSERT INTO ohlcv_data (time, symbol, timeframe, open, high, low, close, volume, tick_count)
         SELECT
             time_bucket('{bucket_interval}', time) as bucket_time,
-            $1 as symbol,
+            CAST($1 AS VARCHAR) as symbol,
             $3 as target_timeframe,
             FIRST(open, time) as open,
             MAX(high) as high,
@@ -181,18 +173,6 @@ class TimeframeAggregator:
             await self.conn.execute(query, *params)
             logger.info(f"Aggregation completed for {symbol}: {source_timeframe} -> {target_timeframe}")
     
-    async def refresh_continuous_aggregate(self, view_name: str):
-        """Manually refresh a continuous aggregate view"""
-        logger.info(f"Refreshing continuous aggregate: {view_name}")
-        
-        query = f"""
-        CALL refresh_continuous_aggregate('{view_name}', NULL, NULL);
-        """
-        
-        if self.conn:
-            await self.conn.execute(query)
-            logger.info(f"Refresh completed for {view_name}")
-    
     async def aggregate_all_timeframes(
         self,
         symbol: str,
@@ -205,13 +185,13 @@ class TimeframeAggregator:
         """
         logger.info(f"Aggregating all timeframes for {symbol}")
         
-        # First, aggregate from ticks to base timeframes using materialized views
-        for timeframe, view_name in self.TIMEFRAME_MATERIALIZED_VIEWS.items():
+        # First, aggregate from 1m to base timeframes
+        for timeframe in ['1','5','15','60','D']:
             try:
-                await self.refresh_continuous_aggregate(view_name)
-                logger.info(f"Refreshed {view_name}")
+                await self.aggregate_from_lower_timeframe(symbol, '1', timeframe, start_time, end_time)
+                logger.info(f"Aggregated {timeframe} from 1m data")
             except Exception as e:
-                logger.error(f"Error refreshing {view_name}: {e}")
+                logger.error(f"Error aggregating {timeframe} from 1m: {e}")
         
         # Then aggregate additional timeframes from base timeframes
         # 30-minute from 5-minute
@@ -237,6 +217,7 @@ class TimeframeAggregator:
             await self.aggregate_from_lower_timeframe(symbol, 'D', 'M', start_time, end_time)
         except Exception as e:
             logger.error(f"Error aggregating monthly: {e}")
+            
         
         logger.info(f"All timeframes aggregated for {symbol}")
     
@@ -253,48 +234,23 @@ class TimeframeAggregator:
         
         Returns list of dictionaries with OHLCV data
         """
-        # Check if we should use materialized view
-        view_name = self.TIMEFRAME_MATERIALIZED_VIEWS.get(timeframe)
-        
-        if view_name:
-            # Use materialized view for better performance
-            query = f"""
-            SELECT 
-                time,
-                symbol,
-                open,
-                high,
-                low,
-                close,
-                volume,
-                tick_count
-            FROM {view_name}
-            WHERE symbol = $1 
-                AND time >= $2 
-                AND time <= $3
-            ORDER BY time
-            """
-            params = [symbol, start_time, end_time]
-        else:
-            # Use regular table
-            query = """
-            SELECT 
-                time,
-                symbol,
-                open,
-                high,
-                low,
-                close,
-                volume,
-                tick_count
-            FROM ohlcv_data
-            WHERE symbol = $1 
-                AND timeframe = $2
-                AND time >= $3 
-                AND time <= $4
-            ORDER BY time
-            """
-            params = [symbol, timeframe, start_time, end_time]
+        # Since we are no longer using materialized views based on tick data,
+        # we query the ohlcv_data table directly for all timeframes.
+        query = """
+        SELECT 
+            time,
+            symbol,
+            open,
+            high,
+            low,
+            close,
+            volume,
+            tick_count
+        FROM ohlcv_data
+        WHERE symbol = $1 AND timeframe = $2 AND time >= $3 AND time <= $4
+        ORDER BY time
+        """
+        params = [symbol, timeframe, start_time, end_time]
         
         if limit:
             query += f" LIMIT {limit}"
@@ -321,28 +277,15 @@ class TimeframeAggregator:
     
     async def get_latest_bar(self, symbol: str, timeframe: str) -> Optional[Dict]:
         """Get the most recent bar for a symbol/timeframe"""
-        view_name = self.TIMEFRAME_MATERIALIZED_VIEWS.get(timeframe)
-        
-        if view_name:
-            query = f"""
-            SELECT 
-                time, symbol, open, high, low, close, volume, tick_count
-            FROM {view_name}
-            WHERE symbol = $1
-            ORDER BY time DESC
-            LIMIT 1
-            """
-            params = [symbol]
-        else:
-            query = """
-            SELECT 
-                time, symbol, open, high, low, close, volume, tick_count
-            FROM ohlcv_data
-            WHERE symbol = $1 AND timeframe = $2
-            ORDER BY time DESC
-            LIMIT 1
-            """
-            params = [symbol, timeframe]
+        query = """
+        SELECT 
+            time, symbol, open, high, low, close, volume, tick_count
+        FROM ohlcv_data
+        WHERE symbol = $1 AND timeframe = $2
+        ORDER BY time DESC
+        LIMIT 1
+        """
+        params = [symbol, timeframe]
         
         if not self.conn:
             return None
@@ -371,14 +314,14 @@ async def main():
     
     try:
         # Aggregate all timeframes for EURUSD
-        await aggregator.aggregate_all_timeframes('EURUSD')
+       # await aggregator.aggregate_all_timeframes('XAUUSD')
         
         # Get some bars
-        end_time = datetime.utcnow()
+        end_time = datetime(2024,12,31,23,59,59)
         start_time = end_time - timedelta(days=7)
         
         bars = await aggregator.get_aggregated_bars(
-            'EURUSD',
+            'XAUUSD',
             '60',
             start_time,
             end_time

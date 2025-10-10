@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import List, Optional
 import asyncpg
-from histdatacom import download_hist_data as dl
+#from histdatacom import download_hist_data as dl
 from config.settings import settings
 import logging
 
@@ -18,7 +18,7 @@ class HistDataImporter:
     """Import tick data from histdata.com into TimescaleDB"""
     
     SUPPORTED_PAIRS = [
-        'EURUSD', 'GBPUSD', 'USDJPY', 'AUDUSD', 'USDCAD',
+        'XAUUSD', 'GBPUSD', 'USDJPY', 'AUDUSD', 'USDCAD',
         'USDCHF', 'NZDUSD', 'EURJPY', 'GBPJPY', 'EURGBP'
     ]
     
@@ -265,8 +265,6 @@ class HistDataImporter:
     async def import_pair(
         self,
         pair: str,
-        year: int,
-        month: Optional[int] = None,
         timeframe: str = 'tick'
     ):
         """
@@ -278,19 +276,19 @@ class HistDataImporter:
             month: Optional specific month
             timeframe: 'tick', 'tick_bid_ask', or 'M1'
         """
-        logger.info(f"Starting import for {pair} {year}/{month or 'all'}")
+       # logger.info(f"Starting import for {pair} {year}/{month or 'all'}")
         
         # Download data
-        await self.download_data(pair, year, month, timeframe)
+       # await self.download_data(pair, year, month, timeframe)
         
         # Find and process all downloaded zip files
-        zip_files = list(self.download_dir.glob(f"*{pair}*.zip"))
-        logger.info(f"Found {len(zip_files)} zip files to process")
+        csv_files = list(self.extracted_dir.glob(f"*{pair}*.csv"))
+        logger.info(f"Found {len(csv_files)} zip files to process")
         
-        for zip_file in zip_files:
+        for csv_file in csv_files:
             try:
                 # Extract
-                csv_path = self.extract_zip(zip_file)
+                csv_path = csv_file
                 
                 # Parse based on timeframe
                 if timeframe in ['tick', 'tick_bid_ask']:
@@ -302,10 +300,10 @@ class HistDataImporter:
                 
                 # Cleanup
                 csv_path.unlink()
-                logger.info(f"Processed {zip_file.name}")
+                logger.info(f"Processed {csv_file.name}")
                 
             except Exception as e:
-                logger.error(f"Error processing {zip_file}: {e}")
+                logger.error(f"Error processing {csv_file}: {e}")
                 continue
         
         logger.info(f"Import completed for {pair}")
@@ -344,7 +342,7 @@ async def main():
     importer = HistDataImporter()
     
     # Import EURUSD tick data for January 2024
-    await importer.import_pair('EURUSD', 2024, 1, 'tick')
+    await importer.import_pair('XAUUSD', 'M1')
     
     # Or import a date range
     # start = datetime(2024, 1, 1)

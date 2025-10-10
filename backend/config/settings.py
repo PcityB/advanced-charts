@@ -6,7 +6,7 @@ class Settings(BaseSettings):
     # Database
     DATABASE_URL: str = "postgresql://trading_user:trading_pass@localhost:5432/trading_simulator"
     DATABASE_HOST: str = "localhost"
-    DATABASE_PORT: int = 5432
+    DATABASE_PORT: int = 5433
     DATABASE_NAME: str = "trading_simulator"
     DATABASE_USER: str = "trading_user"
     DATABASE_PASSWORD: str = "trading_pass"
