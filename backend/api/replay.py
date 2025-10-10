@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException, Depends
 from typing import List, Optional
 from datetime import datetime, timedelta
+from dateutil.parser import parse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update
 from database.connection import get_async_session
@@ -235,8 +236,14 @@ async def get_replay_bars(
             # Convert to OHLCVBar format
             ohlcv_bars = []
             for bar in bars:
+                # Handle time field - it comes as ISO string from aggregator
+                if isinstance(bar['time'], str):
+                    bar_time = parse(bar['time'])
+                else:
+                    bar_time = bar['time']
+                
                 ohlcv_bars.append(OHLCVBar(
-                    time=int(bar['time'].timestamp() * 1000),  # Milliseconds
+                    time=int(bar_time.timestamp() * 1000),  # Milliseconds
                     open=bar['open'],
                     high=bar['high'],
                     low=bar['low'],
